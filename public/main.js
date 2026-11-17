@@ -19,11 +19,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressBar = document.querySelector('.loader-progress-bar');
 
   const TOTAL_FRAMES = 111;
-  const REQUIRED_FRAMES = 1; // cukup frame pertama; sisanya streaming di background
+  const CRITICAL_FRAMES = 1; // canvas butuh 1 frame; sisanya streaming di background
   const isMobile = window.innerWidth < 768;
   const frameDir = isMobile ? 'assets/dive-m/' : 'assets/dive/';
-  const frameImages = [];
+  const frameImages = new Array(TOTAL_FRAMES);
+  const EAGER_FRAMES = 3; // frame yang diunduh sebelum intro dibuka
   let loadedFrames = 0;
+  let loadedCriticalFrames = 0;
+  let criticalImages = 0;
+  let loadedCriticalImages = 0;
   let introDismissed = false;
 
   const canvas = document.getElementById('diveCanvas');
@@ -98,15 +102,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const MIN_ANIM_DURATION = 1400; 
   const loadStartTime = performance.now();
   let visualProgress = 0;
+  // kalau frame intro lambat (jaringan jelek), jangan tahan loader selamanya:
+  // hero udah siap = layar udah layak dilihat
+  let frameGateTimedOut = false;
+  setTimeout(() => { frameGateTimedOut = true; }, 2500);
   let animLoopId = null;
 
   function updateVisualProgress() {
     if (introDismissed) return;
     const elapsed = performance.now() - loadStartTime;
     const timeProgress = Math.min(100, (elapsed / MIN_ANIM_DURATION) * 100);
-    const assetProgress = Math.min(100, (loadedFrames / REQUIRED_FRAMES) * 100);
+    const frameReady = loadedCriticalFrames >= CRITICAL_FRAMES || frameGateTimedOut;
+    const heroProgress = criticalImages ? Math.min(1, loadedCriticalImages / criticalImages) : 1;
+    const assetProgress = (frameReady ? heroProgress : 0) * 100;
+    // bar dikasih gerak halus biar nggak kelihatan diam total di awal
+    // gerak halus yang melambat (asymptote ke 88%) biar bar nggak diam kelamaan
+    const creep = 88 * (1 - Math.exp(-elapsed / 5200));
+    const animatedTarget = Math.max(assetProgress, creep);
 
-    const target = Math.min(timeProgress, assetProgress);
+    const target = Math.min(timeProgress, animatedTarget);
 
     visualProgress += (target - visualProgress) * 0.16;
     if (Math.abs(target - visualProgress) < 0.3) {
@@ -117,7 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
       loaderFill.style.width = `${visualProgress.toFixed(1)}%`;
     }
 
-    if (loadedFrames >= REQUIRED_FRAMES && visualProgress >= 99 && elapsed >= MIN_ANIM_DURATION) {
+    const assetsReady = frameReady && (criticalImages === 0 || loadedCriticalImages >= criticalImages);
+    if (assetsReady && visualProgress >= 99 && elapsed >= MIN_ANIM_DURATION) {
       if (loaderFill) loaderFill.style.width = '100%';
       setTimeout(runIntroDismiss, 180);
     } else {
@@ -125,30 +140,69 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  for (let i = 1; i <= TOTAL_FRAMES; i++) {
+  const loadFrame = (i) => {
+    if (frameImages[i - 1]) return;
     const img = new Image();
     const num = padZero(i, 3);
     img.src = `${frameDir}f_${num}.webp`;
     img.onload = () => {
       loadedFrames++;
+      if (i <= CRITICAL_FRAMES) loadedCriticalFrames++;
       if (i === 1) {
         requestFrameRender(0);
       }
     };
     img.onerror = () => {
       loadedFrames++;
+      if (i <= CRITICAL_FRAMES) loadedCriticalFrames++;
     };
-    frameImages.push(img);
-  }
+    frameImages[i - 1] = img;
+  };
+
+  // Unduh frame awal dulu. 111 frame sekaligus bikin frame pertama kehabisan antrean
+  // di jaringan lambat, jadi sisanya nyusul setelah intro kebuka.
+  for (let i = 1; i <= Math.min(EAGER_FRAMES, TOTAL_FRAMES); i++) loadFrame(i);
+
+  const streamRemainingFrames = () => {
+    let next = EAGER_FRAMES + 1;
+    if (next > TOTAL_FRAMES) return;
+    const pump = () => {
+      if (next > TOTAL_FRAMES) return;
+      for (let k = 0; k < 4 && next <= TOTAL_FRAMES; k++, next++) loadFrame(next);
+      setTimeout(pump, 90);
+    };
+    pump();
+  };
+
+  // Tunggu aset hero (gambar yang benar-benar kelihatan di layar pertama)
+  const heroImages = Array.prototype.slice.call(document.querySelectorAll('#home img, .real-cloud-layer'));
+  criticalImages = heroImages.length;
+  heroImages.forEach((img) => {
+    const done = () => {
+      // decode() memastikan gambar benar-benar siap dilukis, bukan cuma selesai diunduh
+      if (img.decode) {
+        img.decode().then(() => { loadedCriticalImages++; }).catch(() => { loadedCriticalImages++; });
+      } else {
+        loadedCriticalImages++;
+      }
+    };
+    if (img.complete && img.naturalWidth > 0) {
+      done();
+    } else {
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+    }
+  });
 
   animLoopId = requestAnimationFrame(updateVisualProgress);
 
+  // Jaring pengaman: kalau jaringan sangat lambat, jangan biarkan user terjebak di loader
   setTimeout(() => {
     if (!introDismissed) {
       if (loaderFill) loaderFill.style.width = '100%';
       runIntroDismiss();
     }
-  }, 5000);
+  }, 9000);
 
   if (cloudLoader) {
     cloudLoader.addEventListener('click', () => {
@@ -169,27 +223,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const cloudConfigs = [
       
-      { src: 'assets/clouds/cloud_1.png', top: '1%', width: 440, opacity: 0.32, progress: 0.04, duration: 95, blur: 1.5, bobAmp: 10, bobDur: 7.2 },
-      { src: 'assets/clouds/cloud_3.png', top: '4%', width: 380, opacity: 0.28, progress: 0.22, duration: 105, blur: 2.0, bobAmp: 8, bobDur: 8.0 },
-      { src: 'assets/clouds/cloud_2.png', top: '0%', width: 520, opacity: 0.25, progress: 0.46, duration: 110, blur: 2.0, bobAmp: 12, bobDur: 8.5 },
-      { src: 'assets/clouds/cloud_4.png', top: '3%', width: 420, opacity: 0.30, progress: 0.68, duration: 100, blur: 1.5, bobAmp: 9, bobDur: 7.6 },
-      { src: 'assets/clouds/cloud_1.png', top: '6%', width: 460, opacity: 0.26, progress: 0.88, duration: 115, blur: 2.0, bobAmp: 11, bobDur: 8.2 },
+      { src: 'assets/clouds/cloud_1.webp', top: '1%', width: 440, opacity: 0.32, progress: 0.04, duration: 95, blur: 1.5, bobAmp: 10, bobDur: 7.2 },
+      { src: 'assets/clouds/cloud_3.webp', top: '4%', width: 380, opacity: 0.28, progress: 0.22, duration: 105, blur: 2.0, bobAmp: 8, bobDur: 8.0 },
+      { src: 'assets/clouds/cloud_2.webp', top: '0%', width: 520, opacity: 0.25, progress: 0.46, duration: 110, blur: 2.0, bobAmp: 12, bobDur: 8.5 },
+      { src: 'assets/clouds/cloud_4.webp', top: '3%', width: 420, opacity: 0.30, progress: 0.68, duration: 100, blur: 1.5, bobAmp: 9, bobDur: 7.6 },
+      { src: 'assets/clouds/cloud_1.webp', top: '6%', width: 460, opacity: 0.26, progress: 0.88, duration: 115, blur: 2.0, bobAmp: 11, bobDur: 8.2 },
 
-      { src: 'assets/clouds/cloud_2.png', top: '7%', width: 620, opacity: 0.48, progress: 0.12, duration: 68, blur: 0, bobAmp: 18, bobDur: 6.0 },
-      { src: 'assets/clouds/cloud_4.png', top: '12%', width: 560, opacity: 0.45, progress: 0.34, duration: 62, blur: 0, bobAmp: 15, bobDur: 5.5 },
-      { src: 'assets/clouds/cloud_1.png', top: '5%', width: 680, opacity: 0.52, progress: 0.58, duration: 74, blur: 0, bobAmp: 16, bobDur: 6.4 },
-      { src: 'assets/clouds/cloud_3.png', top: '15%', width: 540, opacity: 0.42, progress: 0.78, duration: 58, blur: 0, bobAmp: 14, bobDur: 5.8 },
-      { src: 'assets/clouds/cloud_2.png', top: '18%', width: 590, opacity: 0.46, progress: 0.96, duration: 65, blur: 0, bobAmp: 17, bobDur: 6.2 },
+      { src: 'assets/clouds/cloud_2.webp', top: '7%', width: 620, opacity: 0.48, progress: 0.12, duration: 68, blur: 0, bobAmp: 18, bobDur: 6.0 },
+      { src: 'assets/clouds/cloud_4.webp', top: '12%', width: 560, opacity: 0.45, progress: 0.34, duration: 62, blur: 0, bobAmp: 15, bobDur: 5.5 },
+      { src: 'assets/clouds/cloud_1.webp', top: '5%', width: 680, opacity: 0.52, progress: 0.58, duration: 74, blur: 0, bobAmp: 16, bobDur: 6.4 },
+      { src: 'assets/clouds/cloud_3.webp', top: '15%', width: 540, opacity: 0.42, progress: 0.78, duration: 58, blur: 0, bobAmp: 14, bobDur: 5.8 },
+      { src: 'assets/clouds/cloud_2.webp', top: '18%', width: 590, opacity: 0.46, progress: 0.96, duration: 65, blur: 0, bobAmp: 17, bobDur: 6.2 },
 
-      { src: 'assets/clouds/cloud_3.png', top: '22%', width: 510, opacity: 0.38, progress: 0.08, duration: 78, blur: 0.5, bobAmp: 12, bobDur: 6.8 },
-      { src: 'assets/clouds/cloud_1.png', top: '25%', width: 480, opacity: 0.35, progress: 0.28, duration: 82, blur: 0.5, bobAmp: 11, bobDur: 7.0 },
-      { src: 'assets/clouds/cloud_4.png', top: '20%', width: 530, opacity: 0.40, progress: 0.52, duration: 72, blur: 0, bobAmp: 13, bobDur: 6.5 },
-      { src: 'assets/clouds/cloud_2.png', top: '27%', width: 460, opacity: 0.33, progress: 0.72, duration: 85, blur: 0.5, bobAmp: 10, bobDur: 7.4 },
-      { src: 'assets/clouds/cloud_3.png', top: '23%', width: 500, opacity: 0.36, progress: 0.90, duration: 76, blur: 0, bobAmp: 12, bobDur: 6.7 },
+      { src: 'assets/clouds/cloud_3.webp', top: '22%', width: 510, opacity: 0.38, progress: 0.08, duration: 78, blur: 0.5, bobAmp: 12, bobDur: 6.8 },
+      { src: 'assets/clouds/cloud_1.webp', top: '25%', width: 480, opacity: 0.35, progress: 0.28, duration: 82, blur: 0.5, bobAmp: 11, bobDur: 7.0 },
+      { src: 'assets/clouds/cloud_4.webp', top: '20%', width: 530, opacity: 0.40, progress: 0.52, duration: 72, blur: 0, bobAmp: 13, bobDur: 6.5 },
+      { src: 'assets/clouds/cloud_2.webp', top: '27%', width: 460, opacity: 0.33, progress: 0.72, duration: 85, blur: 0.5, bobAmp: 10, bobDur: 7.4 },
+      { src: 'assets/clouds/cloud_3.webp', top: '23%', width: 500, opacity: 0.36, progress: 0.90, duration: 76, blur: 0, bobAmp: 12, bobDur: 6.7 },
 
-      { src: 'assets/clouds/cloud_4.png', top: '2%', width: 820, opacity: 0.24, progress: 0.18, duration: 48, blur: 3.0, bobAmp: 22, bobDur: 5.0 },
-      { src: 'assets/clouds/cloud_2.png', top: '14%', width: 780, opacity: 0.26, progress: 0.62, duration: 44, blur: 2.5, bobAmp: 20, bobDur: 4.8 },
-      { src: 'assets/clouds/cloud_1.png', top: '8%', width: 850, opacity: 0.22, progress: 0.82, duration: 50, blur: 3.5, bobAmp: 24, bobDur: 5.2 }
+      { src: 'assets/clouds/cloud_4.webp', top: '2%', width: 820, opacity: 0.24, progress: 0.18, duration: 48, blur: 3.0, bobAmp: 22, bobDur: 5.0 },
+      { src: 'assets/clouds/cloud_2.webp', top: '14%', width: 780, opacity: 0.26, progress: 0.62, duration: 44, blur: 2.5, bobAmp: 20, bobDur: 4.8 },
+      { src: 'assets/clouds/cloud_1.webp', top: '8%', width: 850, opacity: 0.22, progress: 0.82, duration: 50, blur: 3.5, bobAmp: 24, bobDur: 5.2 }
     ];
 
     const screenW = window.innerWidth;
@@ -315,6 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (introDismissed) return;
     introDismissed = true;
     if (animLoopId) cancelAnimationFrame(animLoopId);
+    streamRemainingFrames();
 
     if (frameImages[0] && frameImages[0].complete) {
       renderCanvasFrame(frameImages[0]);
@@ -403,6 +458,15 @@ document.addEventListener('DOMContentLoaded', () => {
         ease: 'power2.inOut'
       }, 0.65);
 
+      // Jaring pengaman: kalau animasi GSAP macet (tab background / GPU lemot),
+      // intro tetap ditutup supaya user nggak nyangkut di layar loading.
+      setTimeout(() => {
+        if (cloudLoader && getComputedStyle(cloudLoader).display !== 'none') {
+          cloudLoader.style.display = 'none';
+          animateHeroEntrance();
+        }
+      }, 2400);
+
     } else {
       if (progressBar) progressBar.style.display = 'none';
       if (cloudLoader) {
@@ -415,7 +479,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  let heroEntranceDone = false;
   const animateHeroEntrance = () => {
+    if (heroEntranceDone) return;
+    heroEntranceDone = true;
     const heroElements = ['#pillNav', '#heroColLeft', '#heroColCenter', '#heroColRight', '#scrollDivePrompt'];
     
     heroElements.forEach(sel => {
