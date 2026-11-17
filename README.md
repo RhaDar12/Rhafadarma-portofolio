@@ -16,7 +16,7 @@ Website profil pribadi (portofolio) yang dibangun pakai **Astro 7** (framework w
 ## Development
 ```bash
 npm install
-npm run dev      # http://localhost:4321/portfolio-astro/
+npm run dev      # http://localhost:4321/Rhafadarma-portofolio/
 npm run build    # output ke dist/
 npm run preview
 ```
@@ -24,4 +24,4 @@ npm run preview
 ## Deploy
 Hosting gratis di **GitHub Pages** lewat GitHub Actions, otomatis build + deploy setiap push ke `main` (workflow: `.github/workflows/deploy.yml`).
 
-Live: https://rhadar12.github.io/portfolio-astro/
+Live: https://rhadar12.github.io/Rhafadarma-portofolio/
