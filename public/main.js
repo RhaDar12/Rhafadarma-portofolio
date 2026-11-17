@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressBar = document.querySelector('.loader-progress-bar');
 
   const TOTAL_FRAMES = 111;
+  const REQUIRED_FRAMES = Math.min(TOTAL_FRAMES, 24);
   const isMobile = window.innerWidth < 768;
   const frameDir = isMobile ? 'assets/dive-m/' : 'assets/dive/';
   const frameImages = [];
@@ -103,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (introDismissed) return;
     const elapsed = performance.now() - loadStartTime;
     const timeProgress = Math.min(100, (elapsed / MIN_ANIM_DURATION) * 100);
-    const assetProgress = Math.min(100, (loadedFrames / TOTAL_FRAMES) * 100);
+    const assetProgress = Math.min(100, (loadedFrames / REQUIRED_FRAMES) * 100);
 
     const target = Math.min(timeProgress, assetProgress);
 
@@ -116,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
       loaderFill.style.width = `${visualProgress.toFixed(1)}%`;
     }
 
-    if (loadedFrames >= TOTAL_FRAMES && visualProgress >= 99 && elapsed >= MIN_ANIM_DURATION) {
+    if (loadedFrames >= REQUIRED_FRAMES && visualProgress >= 99 && elapsed >= MIN_ANIM_DURATION) {
       if (loaderFill) loaderFill.style.width = '100%';
       setTimeout(runIntroDismiss, 180);
     } else {
@@ -147,11 +148,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (loaderFill) loaderFill.style.width = '100%';
       runIntroDismiss();
     }
-  }, 20000);
+  }, 9000);
 
   if (cloudLoader) {
     cloudLoader.addEventListener('click', () => {
-      if (loadedFrames >= TOTAL_FRAMES && !introDismissed) {
+      if (!introDismissed) {
         if (loaderFill) loaderFill.style.width = '100%';
         runIntroDismiss();
       }
