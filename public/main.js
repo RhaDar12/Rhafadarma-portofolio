@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressBar = document.querySelector('.loader-progress-bar');
 
   const TOTAL_FRAMES = 111;
-  const REQUIRED_FRAMES = Math.min(TOTAL_FRAMES, 8);
+  const REQUIRED_FRAMES = 1; // cukup frame pertama; sisanya streaming di background
   const isMobile = window.innerWidth < 768;
   const frameDir = isMobile ? 'assets/dive-m/' : 'assets/dive/';
   const frameImages = [];
