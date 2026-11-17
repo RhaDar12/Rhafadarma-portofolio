@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressBar = document.querySelector('.loader-progress-bar');
 
   const TOTAL_FRAMES = 111;
-  const REQUIRED_FRAMES = Math.min(TOTAL_FRAMES, 24);
+  const REQUIRED_FRAMES = Math.min(TOTAL_FRAMES, 8);
   const isMobile = window.innerWidth < 768;
   const frameDir = isMobile ? 'assets/dive-m/' : 'assets/dive/';
   const frameImages = [];
@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (loaderFill) loaderFill.style.width = '100%';
       runIntroDismiss();
     }
-  }, 9000);
+  }, 5000);
 
   if (cloudLoader) {
     cloudLoader.addEventListener('click', () => {
